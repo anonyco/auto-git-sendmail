@@ -1,0 +1,266 @@
+#!/bin/sh
+
+# adapted from https://stackoverflow.com/a/10466960/5601591
+
+# from https://stackoverflow.com/a/17744637/5601591
+cd "$(dirname "$(readlink -f "$0" || realpath "$0")" 2>/dev/null)"
+
+RESET='\033[0m'
+
+RED='\033[00;31m'
+GREEN='\033[00;32m'
+YELLOW='\033[00;33m'
+BLUE='\033[00;34m'
+PURPLE='\033[00;35m'
+CYAN='\033[00;36m'
+LGRAY='\033[00;37m'
+
+LRED='\033[01;31m'
+LGREEN='\033[01;32m'
+LYELLOW='\033[01;33m'
+LBLUE='\033[01;34m'
+LPURPLE='\033[01;35m'
+LCYAN='\033[01;36m'
+WHITE='\033[01;37m'
+
+DRED='\033[02;31m'
+DGREEN='\033[02;32m'
+DYELLOW='\033[02;33m'
+DBLUE='\033[02;34m'
+DPURPLE='\033[02;35m'
+DCYAN='\033[02;36m'
+DGREY='\033[02;37m'
+
+colorize() {
+  if test -n "$NOCOLOR" ; then
+    echo "$@"
+  else
+    color="$1"
+    shift
+    printf "$color%s$RESET\n" "$*"
+  fi
+}
+
+if tput smcup >/dev/tty 2>/dev/null ; then
+  # "0" means this will be called in all cases prior to exit.
+  # See https://stackoverflow.com/a/71412702/5601591
+  # Actually, in my testing, "0" only works for bash and not other shells
+  tputCleanup() {
+    rc=$?
+    tput rmcup >/dev/tty
+    exit "$rc"
+  }
+  
+  if ! trap tputCleanup 1 2 3 6 9 13 15 >/dev/null 2>&1 ; then
+    trap tputCleanup EXIT INT TERM
+  fi
+  
+  UI_AUTOFILL_DISPLAY_CLEAR_METHOD="$(tput clear)"
+elif tput ti >/dev/tty 2>/dev/null ; then
+  tputCleanup() {
+    rc=$?
+    tput rmcup >/dev/tty
+    exit "$rc"
+  }
+  
+  if ! trap tputCleanup 1 2 3 6 9 13 15 >/dev/null 2>&1 ; then
+    trap tputCleanup EXIT INT TERM
+  fi
+
+  UI_AUTOFILL_DISPLAY_CLEAR_METHOD="$(tput clear)"
+elif command -v clear >/dev/null 2>&1; then
+  UI_AUTOFILL_DISPLAY_CLEAR_METHOD="$(clear)"
+fi
+
+if test -z "$UI_AUTOFILL_DISPLAY_CLEAR_METHOD" ; then
+  UI_AUTOFILL_DISPLAY_CLEAR_METHOD="$(echo -en "\E[H\E[2J\E[3J")"
+fi
+
+export UI_AUTOFILL_DISPLAY_CLEAR_METHOD
+
+# debug test:
+#printf "%s" "$UI_AUTOFILL_DISPLAY_CLEAR_METHOD" | xxd
+#sleep 10
+#exit 0
+
+#newLineChar="$(echo ; echo x)"
+#newLineChar="${newLineChar%x}"
+newLineChar='
+'
+
+promptForPassword() (
+  # credit to https://unix.stackexchange.com/a/223000/271631
+  
+  # has to be done in subshell to prevent early exit
+  if (exec < /dev/tty); then
+    # always read from the tty even when redirected:
+    exec < /dev/tty || exit # || exit only needed for bash
+
+    # save current tty settings:
+    tty_settings=$(stty -g) || exit
+
+    # schedule restore of the settings on exit of that subshell
+    # or on receiving SIGINT or SIGTERM:
+    trap 'stty "$tty_settings"' EXIT INT TERM
+
+    # disable terminal local echo
+    stty -echo || exit
+
+    # prompt on tty
+    if [ -z "$1" ]; then
+      printf "Password: " > /dev/tty
+    else
+      printf "%s" "$1" > /dev/tty
+    fi
+
+    # read password as one line, record exit status
+    IFS= read -r password
+    ret=$?
+
+    # display a newline to visually acknowledge the entered password
+    echo > /dev/tty
+
+    # return the password for $REPLY
+    echo "$password$newLineChar"
+    exit "$ret"
+  else
+    IFS= read -r password
+    ret=$?
+    echo "$password$newLineChar"
+    exit "$ret"
+  fi
+)
+
+{
+  export AUTOFILL_IN_USERNAME
+  export AUTOFILL_OUT_USERNAME
+  export AUTOFILL_IN_PASSWORD
+  export AUTOFILL_OUT_PASSWORD
+  export AUTOFILL_IN_PROTOCOL
+  export AUTOFILL_IN_STATUS
+  export AUTOFILL_OUT_PROTOCOL
+  export AUTOFILL_OUT_STATUS
+  
+  export AUTOFILL_IN_SERVER
+  export AUTOFILL_IN_PORT
+  export AUTOFILL_IN_SECURITY
+  export AUTOFILL_IN_ERRORMSG
+  
+  export AUTOFILL_OUT_SERVER
+  export AUTOFILL_OUT_PORT
+  export AUTOFILL_OUT_SECURITY
+  export AUTOFILL_OUT_ERRORMSG
+  
+  export AUTOFILL_ERR_INDENT='         '
+  
+  AUTOFILL_IN_STATUS='notfound'
+  AUTOFILL_OUT_STATUS='notfound'
+  
+  continueShowOptsLoop=y
+  while test "$continueShowOptsLoop" = "y" ; do
+    printf "%s" "$UI_AUTOFILL_DISPLAY_CLEAR_METHOD" >/dev/tty # alternative screens can get messy and stucky if user presses Ctrl+Z, so just good ol' clear
+    
+    # this script written in php will try to figure it all out
+    # was previously ./ui-autofill-display "$uiAutofillDisplayArg"
+    eval "$(UI_AUTOFILL_DISPLAY_PROMPT="Choose which field # to edit or 'C' to continue [0-9|C]: " ./ui-autofill-display)"
+
+    #selectedOpt=''
+    #printf "Choose which field # to edit or 'C' to continue [0-9|C]: "
+    #IFS= read -r selectedOpt
+    
+    #case "$selectedOpt" in
+    case "$UI_AUTOFILL_DISPLAY_RESPONSE" in
+      0)
+        printf 'New value for outgoing server (domain name or IPv4/v6 address): '
+        read -r AUTOFILL_OUT_SERVER
+        ;;
+      1)
+        printf 'New value for outgoing username (typically email address): '
+        read -r AUTOFILL_OUT_USERNAME
+        ;;
+      2)
+        AUTOFILL_OUT_PASSWORD="$(promptForPassword 'New value for outgoing password (typically random code): ')"
+        ;;
+      3)
+        printf 'New value for outgoing port (integer): '
+        read -r AUTOFILL_OUT_PORT
+        ;;
+      4)
+        printf 'New value for outgoing security (ssl to start stream encrypted; tls to use starttls or startssl to upgrade): '
+        read -r AUTOFILL_OUT_SECURITY
+        ;;
+      5)
+        printf 'New value for incoming server (domain name or IPv4/v6 address): '
+        read -r AUTOFILL_IN_SERVER
+        ;;
+      6)
+        printf 'New value for incoming username (typically email address): '
+        read -r AUTOFILL_IN_USERNAME
+        ;;
+      7)
+        AUTOFILL_IN_PASSWORD="$(promptForPassword 'New value for incoming password (typically random code): ')"
+        ;;
+      8)
+        printf 'New value for incoming port (integer): '
+        read -r AUTOFILL_IN_PORT
+        ;;
+      9)
+        printf 'New value for incoming security (ssl to start stream encrypted; tls to use starttls or startssl to upgrade): '
+        read -r AUTOFILL_IN_SECURITY
+        ;;
+      [Cc]|"'[cC]'"|'"[cC]"')
+        # It's possible for an email server to exist that, for example, only supports crammd5 passwords, which the autofill php script doesn't support
+        if test -n "$AUTOFILL_OUT_USERNAME" \
+             -a -n "$AUTOFILL_OUT_PASSWORD" \
+             -a -n "$AUTOFILL_OUT_PORT" \
+             -a -n "$AUTOFILL_OUT_SECURITY" \
+             -a -n "$AUTOFILL_OUT_SERVER" \
+             -a -n "$AUTOFILL_IN_USERNAME" \
+             -a -n "$AUTOFILL_IN_PASSWORD" \
+             -a -n "$AUTOFILL_IN_PORT" \
+             -a -n "$AUTOFILL_IN_SECURITY" \
+             -a -n "$AUTOFILL_IN_SERVER" ; then
+          continueShowOptsLoop=n
+        else
+          echo ""
+          colorize "$RED" "ERR: You can't Continue until all fields are filled out. (Note: you don't need a GOOD status.)"
+          echo "Press Enter to go back and try again."
+          read -r dummyfoobarvar
+        fi
+        ;;
+    esac
+    
+    # Finally, try to autodiscover using the new settings
+    AUTOFILL_IN_STATUS='notfound'
+    AUTOFILL_OUT_STATUS='notfound'
+    eval "$("$AUTOFILLEMAILDIR/envfillemail" 2>/dev/null)" || true
+  done
+  printf "%s" "$UI_AUTOFILL_DISPLAY_CLEAR_METHOD" >/dev/tty
+
+  # stop exporting all the variables:
+} 1>&2
+
+if test "$(command -v printf 2>/dev/null)" = "printf" && test "_$(printf "%q" "'" 2>/dev/null)" = "_\\'" ; then
+  # printf must be a builtin so that password doesn't appear in CLI args
+  printf_q() {
+    printf "%q" "$@"
+  }
+#elif test "_$(/usr/bin/printf "%q" "'" 2>/dev/null)" = "_\\'" ; then
+#  printf_q() {
+#    /usr/bin/printf "%q" "$@"
+#  }
+else
+  printf_q() {
+    printf "%s" "$@" | sed "s/'/'\\\\''/"
+  }
+fi
+
+echo "AUTOFILL_OUT_USERNAME='$(printf_q "$AUTOFILL_OUT_USERNAME")'"
+echo "AUTOFILL_OUT_PASSWORD='$(printf_q "$AUTOFILL_OUT_PASSWORD")'"
+echo "AUTOFILL_OUT_PROTOCOL='$(printf_q "$AUTOFILL_OUT_PROTOCOL")'"
+echo "AUTOFILL_OUT_SERVER='$(printf_q "$AUTOFILL_OUT_SERVER")'"
+echo "AUTOFILL_OUT_PORT='$(printf_q "$AUTOFILL_OUT_PORT")'"
+echo "AUTOFILL_OUT_SECURITY='$(printf_q "$AUTOFILL_OUT_SECURITY")'"
+echo "AUTOFILL_OUT_ERRORMSG=''"
+echo "AUTOFILL_OUT_STATUS=''"
+

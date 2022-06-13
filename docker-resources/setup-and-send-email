@@ -1,0 +1,351 @@
+#!/bin/bash
+
+set -e
+
+AUTOFILLEMAILDIR="${AUTOFILLEMAILDIR:-}"
+
+if test -z "$AUTOFILLEMAILDIR"; then
+  # from https://stackoverflow.com/a/17744637/5601591
+  AUTOFILLEMAILDIR="$(dirname "$(readlink -f "$0" || realpath "$0")" 2>/dev/null)"
+fi
+
+# adapted from https://stackoverflow.com/a/10466960/5601591
+
+RESET=$'\033[0m'
+
+RED=$'\033[00;31m'
+GREEN=$'\033[00;32m'
+YELLOW=$'\033[00;33m'
+BLUE=$'\033[00;34m'
+PURPLE=$'\033[00;35m'
+CYAN=$'\033[00;36m'
+LGRAY=$'\033[00;37m'
+
+LRED=$'\033[01;31m'
+LGREEN=$'\033[01;32m'
+LYELLOW=$'\033[01;33m'
+LBLUE=$'\033[01;34m'
+LPURPLE=$'\033[01;35m'
+LCYAN=$'\033[01;36m'
+WHITE=$'\033[01;37m'
+
+DRED=$'\033[02;31m'
+DGREEN=$'\033[02;32m'
+DYELLOW=$'\033[02;33m'
+DBLUE=$'\033[02;34m'
+DPURPLE=$'\033[02;35m'
+DCYAN=$'\033[02;36m'
+DGREY=$'\033[02;37m'
+
+colorize() {
+  if test -n "$NOCOLOR" ; then
+    echo "$@"
+  else
+    color="$1"
+    shift
+    printf "$color%s$RESET\n" "$*"
+  fi
+}
+
+if test -n "${VIMCONFIGURATION:-}" ; then
+  printf "%s" "$VIMCONFIGURATION" > ~/.vimrc
+fi
+
+EDITOR="${EDITOR:-/usr/bin/micro}"
+
+if test "$EDITOR" = "/usr/bin/micro" ; then
+  colorize "$LGRAY" "INFO: The micro text editor will be used. Press Ctrl+S to save and Ctrl+Q to quit when in micro."
+fi
+
+doForgetOnly=n
+doConfigure=n
+if test "$1" = "config" ; then
+  doConfigure=y
+  shift
+elif test "$1" = "forget" ; then
+  doConfigure=y
+  doForgetOnly=y
+  shift
+elif test "$(git config --local --get credential.helper 2>/dev/null)" = "store --file /credentials-store/credentials" && test -r "/credentials-store/credentials" ; then
+  # /home/git-user is tmpfs mounted at the host path /dev/shm/auto-git-sendemail-cred-store-UID-GID
+  colorize "$LGRAY" 'INFO: Your email password is saved in memory until the next reboot. Use `./git-email-helper config` to change this.' 
+elif test -n "$( git config --local --get sendemail.smtppass >/dev/null 2>&1 || true )" ; then
+  colorize "$LGRAY" "INFO: Your email password is saved persistently in this repo's .git directory. Use \`./git-email-helper config\` to change this."
+elif git config --local --get credential.helper >/dev/null 2>&1 ; then
+  colorize "$LGRAY" "INFO: Your email password is NOT saved; you must type it in every time. Use \`./git-email-helper config\` to change this."
+else
+  doConfigure=y
+fi
+
+yes_or_no() {
+  while true; do
+    printf "%s [y/n]: " "$*"
+    IFS= read -r yn
+    case $yn in
+      [Nn]*) return 1 ;;
+      [Yy]*) return 0  ;;
+    esac
+  done
+}
+
+promptForInput() (
+    userInput=
+    while test -z "$userInput" ; do
+      printf "%s" "${1:-Username: }" 1>&2
+      IFS= read -r userInput
+    done
+    echo "$userInput"
+)
+
+newLineChar="$(echo ; echo x)"
+newLineChar="${newLineChar%x}"
+
+promptForPassword() (
+  # credit to https://unix.stackexchange.com/a/223000/271631
+  
+  # has to be done in subshell to prevent early exit
+  if (exec < /dev/tty); then
+    # always read from the tty even when redirected:
+    exec < /dev/tty || exit # || exit only needed for bash
+
+    # save current tty settings:
+    tty_settings=$(stty -g) || exit
+
+    # schedule restore of the settings on exit of that subshell
+    # or on receiving SIGINT or SIGTERM:
+    trap 'stty "$tty_settings"' EXIT INT TERM
+
+    # disable terminal local echo
+    stty -echo || exit
+
+    # prompt on tty
+    #if [ -z "$1" ]; then
+    #  printf "Password: " > /dev/tty
+    #else
+    #  printf "%s" "$1" > /dev/tty
+    #fi
+    printf "${1:-Password: }" > /dev/tty
+
+    # read password as one line, record exit status
+    IFS= read -r password
+    ret=$?
+
+    # display a newline to visually acknowledge the entered password
+    echo > /dev/tty
+
+    # return the password for $REPLY
+    echo "$password$newLineChar"
+    exit "$ret"
+  else
+    IFS= read -r password
+    ret=$?
+    echo "$password$newLineChar"
+    exit "$ret"
+  fi
+)
+
+if test "$doConfigure" = "y" ; then
+  colorize "$LGRAY" 'Need to remove any existing email configuration in this repo to continue. This will not effect your global git configuration; it will on effect just this --local repo.'
+  colorize "$DGRAY" "(NOTICE: If this is your first time setting this up, then just tick y and continue. We just didn't want to change your repo without your consent.)"
+  
+  if test "$1" = "-y" || test "$1" = "--yes" ; then
+    : # assume yes to queries
+  elif ! yes_or_no 'Proceed with removal of this info?' ; then
+    colorize "$RED" 'Aborting...'
+    exit 1
+  fi
+
+  rm -f /credentials-store/* 2>/dev/null || true
+  git config --local --remove-section sendemail 2>/dev/null || :
+  git config --local --remove-section credential 2>/dev/null || :
+
+  if test "$doForgetOnly" = "y" ; then
+    # we are only clearing information, not updating with new email login information
+    exit 0
+  fi
+  
+  # if everything is already filled out, then skip this part
+  if false && ! test -n "$AUTOFILL_OUT_USERNAME" \
+       -a -n "$AUTOFILL_OUT_PASSWORD" \
+       -a -n "$AUTOFILL_OUT_PORT" \
+       -a -n "$AUTOFILL_OUT_SECURITY" \
+       -a -n "$AUTOFILL_OUT_SERVER" \
+       -a -n "$AUTOFILL_IN_USERNAME" \
+       -a -n "$AUTOFILL_IN_PASSWORD" \
+       -a -n "$AUTOFILL_IN_PORT" \
+       -a -n "$AUTOFILL_IN_SECURITY" \
+       -a -n "$AUTOFILL_IN_SERVER" ; then
+    echo 'Please enter your email login information. Note that some email providers use a randomly generated code for the password.'
+    smtpEmail="$(promptForInput "Email:    ")"
+    
+    while ! smtpPassword="$(promptForPassword)" ; do : ; done
+  
+    #testEmailCfg() {
+    #  #echo "$smtpPassword" | swaks --timeout 5 --protocol ssmtp -q TO --to nobody@example.com --from jack@git.rightend.com --server box.git.rightend.com:587 -tls --auth --auth-user jack@git.rightend.com
+    #
+    #  if echo "$smtpPassword" | swaks --timeout 5 --protocol ssmtp -q TO --to nobody@example.com --from "$smtpEmail" --server box.git.rightend.com:587 -tls --auth --auth-user "$smtpEmail" >/dev/null 2>&1 ; then
+    #
+    #  fi
+    #}
+    
+    #printf 'Username: '
+    #IFS= read smtpUsername
+
+    echo ''
+    echo 'INFO: Please wait up to 20 seconds for this tool to try to autodiscover your email configuration. Then, you will be brought to the next screen, where you can configure each email setting manually and fill in missing pieces if needed.'
+    echo ''
+
+    # will fail if email/password are empty or if email is not a valid email address
+    eval "$(echo -n "$smtpPassword" | "$AUTOFILLEMAILDIR/autofillemail.js" -- "$smtpEmail")"
+    
+    AUTOFILL_IN_PROTOCOL=imap
+    AUTOFILL_OUT_PROTOCOL=smtp
+    
+    # this eval is used to import environment variable results
+    eval "$(
+      AUTOFILL_IN_USERNAME="$AUTOFILL_IN_USERNAME" AUTOFILL_IN_PASSWORD="$AUTOFILL_IN_PASSWORD" AUTOFILL_IN_PROTOCOL="$AUTOFILL_IN_PROTOCOL" AUTOFILL_IN_SERVER="$AUTOFILL_IN_SERVER" AUTOFILL_IN_PORT="$AUTOFILL_IN_PORT" AUTOFILL_IN_SECURITY="$AUTOFILL_IN_SECURITY" AUTOFILL_IN_ERRORMSG="$AUTOFILL_IN_ERRORMSG" \
+        AUTOFILL_OUT_USERNAME="$AUTOFILL_OUT_USERNAME" AUTOFILL_OUT_PASSWORD="$AUTOFILL_OUT_PASSWORD" AUTOFILL_OUT_PROTOCOL="$AUTOFILL_OUT_PROTOCOL" AUTOFILL_OUT_SERVER="$AUTOFILL_OUT_SERVER" AUTOFILL_OUT_PORT="$AUTOFILL_OUT_PORT" AUTOFILL_OUT_SECURITY="$AUTOFILL_OUT_SECURITY" AUTOFILL_OUT_ERRORMSG="$AUTOFILL_OUT_ERRORMSG" \
+        "$AUTOFILLEMAILDIR/ui-autofill"
+    )"
+  fi # if ! test -n "$AUTOFILL_OUT_USERNAME"...
+
+  echo
+
+  colorize "$LGRAY" "Login to your email's SMTP outgoing server:"
+  AUTOFILL_OUT_SERVER="$(    promptForInput "Server (e.x. smtp.example.com):          ")"
+  AUTOFILL_OUT_USERNAME="$(  promptForInput "Username (e.x. admin@example.com):       ")"
+  #AUTOFILL_OUT_PASSWORD="$(promptForPassword "Password (e.x. aLongMnemonic123):        ")"
+  AUTOFILL_OUT_SECURITY=""
+  while test "$AUTOFILL_OUT_SECURITY" = "" ; do
+    AUTOFILL_OUT_SECURITY="$(promptForInput "Security (ssl/tls or starttls):          ")"
+    
+    case "$AUTOFILL_OUT_SECURITY" in
+      ssl)
+        ;;
+      tls)
+        AUTOFILL_OUT_SECURITY=ssl
+        ;;
+      starttls)
+        ;;
+      *)
+        # prompt again
+        AUTOFILL_OUT_SECURITY=""
+    esac
+  done
+  AUTOFILL_OUT_PORT="$(      promptForInput "Port (465 for ssl/tls; 587 for starttls):")"
+
+  echo
+
+  colorize "$LGRAY" "Login to your email's IMAP incoming server:"
+  AUTOFILL_IN_SERVER="$(     promptForInput "Server (e.x. imap.example.com):          ")"
+  AUTOFILL_IN_USERNAME="$(   promptForInput "Username (e.x. admin@example.com):       ")"
+  #AUTOFILL_IN_PASSWORD="$(   promptForPassword "Password (e.x. aLongMnemonic123):     ")"
+  AUTOFILL_IN_SECURITY=""
+  while test "$AUTOFILL_IN_SECURITY" = "" ; do
+    AUTOFILL_IN_SECURITY="$( promptForInput "Security (ssl/tls or starttls):          ")"
+    
+    case "$AUTOFILL_IN_SECURITY" in
+      ssl)
+        ;;
+      tls)
+        AUTOFILL_IN_SECURITY=ssl
+        ;;
+      starttls)
+        ;;
+      *)
+        # prompt again
+        AUTOFILL_IN_SECURITY=""
+    esac
+  done
+  AUTOFILL_IN_PORT="$(       promptForInput "Port (993 for ssl/tls; 143 for starttls):")"
+  
+  echo
+
+  colorize "$LGRAY" "Enter git profile display settings:"
+  GITUSER_NAME="$(           promptForInput "Display name (e.x. John Smith):          ")"
+  GITUSER_EMAIL="$(          promptForInput "Public email (e.x. john@smith.com):      ")"
+
+  echo
+
+  git config --local user.name "$GITUSER_NAME"
+  git config --local user.email "$GITUSER_EMAIL"
+
+  for location in --system --local
+  do
+    git config "$location" sendemail.smtpserver "$AUTOFILL_OUT_SERVER"
+    git config "$location" sendemail.smtpuser "$AUTOFILL_OUT_USERNAME"
+    git config "$location" sendemail.smtpencryption "$AUTOFILL_OUT_SECURITY"
+    git config "$location" sendemail.smtpserverport "$AUTOFILL_OUT_PORT"
+    #if "$savePasswordsToConfig"
+  done
+
+  # Finally, prompt for how to save passwords
+
+  echo 'There are several options for how to save your email password:'
+  echo '  - [P]ersistent password saving. Your password will be saved in ./.git/config forever.' 
+  if test "${TMPFS_CRED_STORE_ENABLED:-n}" = "y" ; then
+    echo '  - [M]emory-only password saving. Your password will be forgotten at the next reboot.' 
+  fi
+  echo '  - [N]o password saving. You will have to re-enter your password every time.' 
+  echo
+  
+  while true; do
+    if test "${TMPFS_CRED_STORE_ENABLED:-n}" = "y" ; then
+      printf "Choose where you want to save your password [p/m/n]: "
+    else
+      printf "Choose where you want to save your password [p/n]: "
+    fi
+    IFS= read -r option
+    case "$option" in
+      [Pp]*)
+        #git config --local sendemail.smtppass "$smtpPassword"
+        # see https://stackoverflow.com/a/35942890/5601591
+        git config --local credential.helper store
+        break
+        ;;
+      [Mm]*)
+        if test "${TMPFS_CRED_STORE_ENABLED:-n}" = "y" ; then
+          git config --local credential.helper "store --file /credentials-store/credentials"
+        fi
+        break
+        ;;
+      [Nn]*)
+        git config --local credential.helper ""
+        break
+        ;;
+    esac
+  done
+fi
+
+possibleActions=( ./script-actions/* )
+
+echo
+colorize "$LGRAY" "Choose which automation action you would like to perform:"
+
+# from https://unix.stackexchange.com/a/511201/271631
+oldPS3="$PS3"
+PS3='
+Enter # of action: '
+select chosenAction in "${possibleActions[@]}"; do
+    if [[ $REPLY == "0" ]]; then
+        colorize "$YELLOW" 'No action selected. Exiting...' >&2
+        exit
+    elif [[ -z $chosenAction ]]; then
+        colorize "$RED" 'Invalid choice, try again' >&2
+    else
+        break
+    fi
+done
+PS3="$oldPS3"
+
+ls -la
+
+for script in "$chosenAction"/*
+do
+  echo
+  colorize "$LGRAY" "Executing $script..."
+  "$script"
+done
+
+
+

@@ -1,0 +1,125 @@
+#!/bin/sh
+
+set -e
+
+if ! test -r ./dockerhub-userdata ; then
+  cat >./dockerhub-userdata <<-'USERDATA'
+	RUN_BUILD=y
+	RUN_TESTS=y
+	# change RUN_PUSH=n to RUN_PUSH=y if you want to push and tag the image up to docker hub or quay or whereever
+	RUN_PUSH=n
+	
+	# Your user/organization account information used to log into dockerhub.io or quay.io or whatever registry service you are using
+	USERNAME=
+	PASSWORD=
+	
+	REPOPREFIX=${USERNAME:-local}
+USERDATA
+  echo 'Generated an empty dockerhub-userdata template. Please fill out the information in dockerhub-userdata if you want to push the images or re-run to just build locally'
+  exit 1
+fi
+
+if ! command -v docker ; then
+  echo 'Need the docker command. Please install packages to provide it' 1>&2
+  exit 1
+fi
+
+. ./dockerhub-userdata
+
+echo '+ . ./dockerhub-userdata'
+
+set -x
+
+if test "${RUN_PUSH:-n}" = "y" ; then
+  # I predict that accepting password as an argument will eventually be deprecated
+  if ! printf '%s\n' "$PASSWORD" | docker login --password-stdin -u "$USERNAME" ; then
+    echo 'Failed to log into the docker server.' 1>&2
+    exit 1
+  fi
+  printf "\n\n\e[0;32mLogin to your docker repo account was successful\e(B\e[m\n"
+fi
+
+if test "${RUN_BUILD:-y}" = "y" ; then
+  printf '\n\n\e[0;32mNow building...\e(B\e[m\n'
+  docker build -f docker-resources/Dockerfile -t local/auto-git-sendemail docker-resources
+
+  printf '\n\n\e[0;32mBuild was successful\e(B\e[m\n'
+else
+  echo 'Build was skipped.'
+fi
+
+if false; then
+  if test "${RUN_TESTS:-y}" = "y" ; then
+    printf '\n\n\e[0;32mNow testing...\e(B\e[m\n'
+
+    # --cpuset-cpus=1,3,5,7 --cpu-period=10000 
+    containerId="$( docker run --rm --detach --privileged --env "DEBUG_KILLAFTER_SEC=${DEBUG_KILLAFTER_SEC:-180}" local/auto-git-sendemail )"
+
+    # if it can't boot up in under a minute, then something is seriously wrong
+    sleep ${BUILD_SLEEP_SEC:-60}
+
+    for test in ./tests/*
+    do
+      printf '\n\e[0;32m> Running test %s\e(B\e[m\n' "$test"
+      $test "$containerId"
+    done
+
+    # All tests passed and the remaining container is of no use to us
+    docker kill "$containerId"
+
+    printf "\n\n\e[0;32mAll tested have passed! Now pushing up and tagging the image appropriately...\e(B\e[m\n"
+  else
+    echo 'Tests were skipped.'
+  fi
+fi
+
+# next, extract info for tagging and push it up to dockerhub
+
+set +ex
+# the echo feedback would get pretty annoying after this point
+
+if ! test "${RUN_PUSH:-n}" = "y" ; then
+  echo
+  echo 'BUILD WAS SUCCESSFUL! The resulting image is local/auto-git-sendemail.'
+  echo
+  exit 0
+fi
+
+printf '\n\n\e[0;32mNow pushing up online...\e(B\e[m\n'
+
+if printf '%q' test 1>/dev/null 2>&1 ; then
+  alias my_posix_printf=printf
+elif /usr/bin/printf '%q' test 1>/dev/null 2>&1 ; then
+  alias my_posix_printf=/usr/bin/printf
+else
+  my_posix_printf() {
+    format="$1"
+    shift
+    printf "$(echo "$format" | sed "s/%q/'%s'/")" "$@"
+  }
+fi
+
+echoback() {
+  my_posix_printf '$ '
+  my_posix_printf '%q ' "$@"
+  echo
+  "$@"
+}
+
+tagAndPushAndRmImage() (
+  set -e
+  echoback docker tag local/auto-git-sendemail "$1"
+  echoback docker push "$1"
+  echoback docker image rm "$1"
+)
+
+tagAndPushAndRmImage "$REPOPREFIX/auto-git-sendemail:$(date +'%0Y-%0m-%0d')"
+tagAndPushAndRmImage "$REPOPREFIX/auto-git-sendemail:latest"
+tagAndPushAndRmImage "$REPOPREFIX/auto-git-sendemail"
+
+echo
+echo 'STATUS: all tags pushed up and done!'
+echo
+
+#echo 'All tags pushed up. Now cleaning the tagged images and pruning...'
+

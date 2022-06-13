@@ -1,0 +1,28 @@
+Worked on Branch v0.1+core-cookie-login
+
+They make N number of changes on their local machine 
+
+Patch Request, saying Code has to be merged into v0.1+core-cookie-login
+
+--Commit 1--
+
+--Commit 2--
+
+--Commit 3--
+
+
+
+>>> take the commits
+Merges them to v0.1+core-cookie-login
+If v0.1+core-cookie-login is not present, reject the patch request
+
+Developer goes back and updates the git-assembler file 
+>>> build server will identify the changes to git assembler and creates an empty branch (based fully out of another branch without any unique commits of its own), pushes it to git server
+
+Developer Creates new patch request
+
+>>> Build server now has an empty branch to which it can push these commits to.
+
+>>> Once unit tests are run the changes are pushed to git
+
+

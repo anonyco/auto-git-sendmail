@@ -1,0 +1,158 @@
+#!/bin/bash
+
+set -e
+
+# adapted from https://stackoverflow.com/a/10466960/5601591
+
+RESET=$'\033[0m'
+
+RED=$'\033[00;31m'
+GREEN=$'\033[00;32m'
+YELLOW=$'\033[00;33m'
+BLUE=$'\033[00;34m'
+PURPLE=$'\033[00;35m'
+CYAN=$'\033[00;36m'
+LGRAY=$'\033[00;37m'
+
+LRED=$'\033[01;31m'
+LGREEN=$'\033[01;32m'
+LYELLOW=$'\033[01;33m'
+LBLUE=$'\033[01;34m'
+LPURPLE=$'\033[01;35m'
+LCYAN=$'\033[01;36m'
+WHITE=$'\033[01;37m'
+
+DRED=$'\033[02;31m'
+DGREEN=$'\033[02;32m'
+DYELLOW=$'\033[02;33m'
+DBLUE=$'\033[02;34m'
+DPURPLE=$'\033[02;35m'
+DCYAN=$'\033[02;36m'
+DGREY=$'\033[02;37m'
+
+colorize() {
+  if test -n "$NOCOLOR" ; then
+    echo "$@"
+  else
+    color="$1"
+    shift
+    printf "$color%s$RESET\n" "$*"
+  fi
+}
+
+if ! ( \
+    command -v id  \
+ && command -v docker \
+ && command -v mkdir \
+ && command -v chmod \
+ && command -v chown \
+ && command -v sed \
+ && command -v stat \
+ && command -v realpath \
+) >/dev/null 2>&1
+then
+  colorize "$LRED" 'ERR: Some commands needed to run this boostrap script are missing! Please provide the following commands on your system:' 1>&2
+  echo '  - chown' 1>&2
+  echo '  - chmod' 1>&2
+  echo '  - docker' 1>&2
+  echo '  - id' 1>&2
+  echo '  - mkdir' 1>&2
+  echo '  - sed' 1>&2
+  echo '  - stat' 1>&2
+  echo '  - realpath' 1>&2
+  exit 1
+fi
+
+if ! test -d ./.git -a -w ./.git ; then
+  colorize "$LRED" 'ERR: You must run this command from the top-level of a git repository your user has permission for. (There should be a ".git" subfolder in the directory where you run this script.)' 1>&2
+  exit 1
+fi
+
+if test -r ./dockerhub-userdata && test -f ./dockerhub-userdata ; then
+  . ./dockerhub-userdata
+fi
+repoPrefix="${USERNAME:-local}"
+dockerImageTag="$repoPrefix/auto-git-sendemail"
+
+# If /run/docker.sock is a socket AND its not writable, then give the user a more friendly error message
+if ! dockerCmdPath="$(command -v docker)" 2>/dev/null ; then
+  colorize "$LRED" 'ERR: Docker is not available. Please install docker to continue.' 1>&2
+  exit 1
+elif test -S /run/docker.sock -a \! -w /run/docker.sock -a "$dockerCmdPath" \!= ~/bin/docker ; then
+  colorize "$LRED" 'ERR: Insufficient permission to run docker. Three options:' 1>&2
+  echo '  - You can install docker-rootless:              https://duckduckgo.com/?q=install+docker+rootless' 1>&2
+  echo '  - OR you can run this script as root:           sudo '"$0" 1>&2
+  echo '  - OR you can add your user to the docker group: sudo usermod -aG docker '"'$USER'" 1>&2
+  exit 1
+fi
+
+# we use the git repo's UID/GID, not the actual user/group of the user we are running as. This is to preserve file permissions to prevent things from turning into a jumbled mess
+userID="$( stat -c "%u" . )"
+groupID="$( stat -c "%g" . )"
+
+# FIXME: trailing newlines are trimmed in subshell expansion, so this will break if running from a directory whose name ends in a new-line
+# According to https://github.com/docker/cli/issues/1480, docker accepts volume entries in CSV format
+mountArg='type=bind,"'"src=$(pwd -L | sed -e 's/"/""/g')"'",dst=/git-repo'
+
+VIMCONFIGURATION=''
+if test -r ~/.vimrc ; then
+  VIMCONFIGURATION="$(cat ~/.vimrc)"
+fi
+export VIMCONFIGURATION
+
+# /tmp can't be trusted to be a tmpfs. Only /dev/shm is guarenteed to be a tmpfs
+credStorePath="/dev/shm/auto-git-sendemail-cred-store-$userID-$groupID"
+
+TMPFS_CRED_STORE_ENABLED=n
+if (test -w /dev/shm \
+ && mkdir -pm 0700 "$credStorePath" \
+ && chown -R "$userID:$groupID" "$credStorePath" \
+ && chmod -R 0700 "$credStorePath" \
+ && true) >/dev/null 2>&1
+then
+  TMPFS_CRED_STORE_ENABLED=y
+else
+  TMPFS_CRED_STORE_ENABLED=n
+  
+  if ! credStorePath="$(mktemp -d)" >/dev/null 2>&1 ; then
+    credStorePath="/tmp/auto-git-sendemail-cred-store-$userID-$groupID-$$-$RANDOM"
+  fi
+  
+  if ! (test -w /dev/shm \
+   && mkdir -pm 0700 "$credStorePath" \
+   && chown -R "$userID:$groupID" "$credStorePath" \
+   && chmod -R 0700 "$credStorePath" \
+   && true) >/dev/null 2>&1
+  then
+    colorize "$LRED" "FATAL ERR: failed to create a temporary directory for the program to use"
+    exit 1
+  fi
+fi
+
+export TMPFS_CRED_STORE_ENABLED
+
+EDITOR="${EDITOR:-}"
+if test -z "$EDITOR" ; then
+  EDITOR="$(realpath /usr/bin/editor)"
+fi
+
+if test -z "$EDITOR" || ! test -x "$EDITOR" ; then
+  # use micro as default editor
+  case "$EDITOR" in
+    *nano*)
+      EDITOR=/usr/bin/nano
+      ;;
+    *vi*|*emac*|ne|*aquamac*)
+      EDITOR=/usr/bin/vim
+      ;;
+    *)
+      EDITOR=/usr/bin/micro
+      ;;
+  esac
+fi
+
+ln -sfT "$EDITOR" "$credStorePath/editor"
+export EDITOR
+
+docker run --net=host --read-only -itu "$userID:$groupID" -w /git-repo --mount "$mountArg" -e NOCOLOR -e VIMCONFIGURATION -e EDITOR -e TMPFS_CRED_STORE_ENABLED -v "$credStorePath:/credentials-store" "$dockerImageTag" "$@"
+
