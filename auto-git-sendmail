@@ -154,5 +154,5 @@ fi
 ln -sfT "$EDITOR" "$credStorePath/editor"
 export EDITOR
 
-docker run --net=host --read-only -itu "$userID:$groupID" -w /git-repo --mount "$mountArg" -e NOCOLOR -e VIMCONFIGURATION -e EDITOR -e TMPFS_CRED_STORE_ENABLED -v "$credStorePath:/credentials-store" "$dockerImageTag" "$@"
+docker run --net=host --read-only -itu "$userID:$groupID" -w /git-repo --mount type=tmpfs,destination=/tmp --mount "$mountArg" -e NOCOLOR -e VIMCONFIGURATION -e EDITOR -e TMPFS_CRED_STORE_ENABLED -v "$credStorePath:/credentials-store" "$dockerImageTag" "$@"
 

@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -ex
+
+git format-patch --cover-letter -M origin/master -o outgoing/
+
+sed -i 's/\*\*\* SUBJECT HERE \*\*\*/Demonstrate that I can use git send-email/' outgoing/*
+

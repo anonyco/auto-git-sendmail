@@ -26,15 +26,17 @@ RUN set -e \
  && upx --lzma -9 ./vim \
  && upx --lzma -9 ./nano \
  && cd /usr/share/perl5/core_perl \
- && rm -rf CPAN Pod Test2 TAP File B Test Tie CPAN.pm Text JSON Archive \
+# Tie Text File JSON B Archive
+# && rm -rf CPAN Pod Test2 TAP Test CPAN.pm \
  && cd /usr/lib/perl5/core_perl \
- && rm -rf CPAN Pod Test2 TAP File B Test Tie CPAN.pm Text JSON Archive \
+# && rm -rf CPAN Pod Test2 TAP Test CPAN.pm \
  && cd / \
- && rm -rf /usr/lib/perl5/core_perl/auto/Encode /usr/share/perl5/core_perl/unicore /usr/bin/git-shell /usr/libexec/git-core/git-http-fetch /usr/libexec/git-core/git-http-push /usr/libexec/git-core/git-sh-i18n--envsubst /usr/libexec/git-core/git-remote-ftp \
- && rm -rf /usr/lib/libbrotlienc.so.* /usr/lib/libnghttp2.so.* /usr/lib/libbrotlicommon.so.* \
+# && rm -rf /usr/lib/perl5/core_perl/auto/Encode /usr/share/perl5/core_perl/unicore /usr/bin/git-shell /usr/libexec/git-core/git-http-fetch /usr/libexec/git-core/git-http-push /usr/libexec/git-core/git-sh-i18n--envsubst /usr/libexec/git-core/git-remote-ftp \
+# && rm -rf /usr/lib/libbrotlienc.so.* /usr/lib/libnghttp2.so.* /usr/lib/libbrotlicommon.so.* \
  # remove apk and upx as we no longer need them
  && apk --purge del apk-tools upx \
- && rm -rf /usr/share/apk/ /usr/share/perl5/core_perl/Unicode /usr/lib/perl5/core_perl/auto/Unicode \
+ && rm -rf /usr/share/apk/ \
+# && rm -rf /usr/share/perl5/core_perl/Unicode /usr/lib/perl5/core_perl/auto/Unicode \
 # Now setup /credentials-store
  && mkdir -p /credentials-store \
  && ln -sfT /credentials-store/etc-gitconfig /etc/gitconfig \

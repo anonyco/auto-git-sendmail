@@ -232,7 +232,7 @@ if test "$doConfigure" = "y" ; then
         AUTOFILL_OUT_SECURITY=""
     esac
   done
-  AUTOFILL_OUT_PORT="$(      promptForInput "Port (465 for ssl/tls; 587 for starttls):")"
+  AUTOFILL_OUT_PORT="$(      promptForInput "Port (587 for ssl/tls; 465 for starttls):")"
 
   echo
 

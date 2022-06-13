@@ -1,0 +1,5 @@
+#!/bin/sh
+
+set -ex
+
+git send-email --to="~sircmpwn/email-test-drive@lists.sr.ht" --subject="Demonstrate that I can git send email" outgoing/*

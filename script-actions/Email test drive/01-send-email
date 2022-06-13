@@ -1,3 +1,0 @@
-#!/bin/sh
-
-git send-email --to="~sircmpwn/email-test-drive@lists.sr.ht" HEAD^

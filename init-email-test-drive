@@ -1,0 +1,13 @@
+#!/bin/sh
+
+cd email-test-drive
+
+git reset --hard HEAD 
+
+git pull -f
+
+ln -sfT ../auto-git-sendemail ./auto-git-sendemail
+ln -sfT ../email-test-drive-script-actions ./script-actions
+
+
+

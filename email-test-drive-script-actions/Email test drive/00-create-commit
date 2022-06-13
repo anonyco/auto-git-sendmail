@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -ex
+
+# from https://git-send-email.io/#step-3
+
+touch your-name
+echo "I'm about to try git send-email" >> your-name
+
+git add your-name
+git commit -m "Demonstrate that I can use git send-email"
