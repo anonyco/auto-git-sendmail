@@ -1,0 +1,22 @@
+#!/bin/sh
+
+#if ! test -d ./email-test-drive/ ; then
+#  echo Please run this script in the demo folder of the project 1>&2
+#  exit 1
+#fi
+
+if ! test -d ./email-test-drive/ ; then
+  git clone https://git.sr.ht/~sircmpwn/email-test-drive
+fi
+
+cd email-test-drive
+
+#git reset --hard HEAD 
+
+#git pull -f
+
+ln -sfT ../../auto-git-sendmail ./auto-git-sendemail
+ln -sfT ../email-test-drive-script-actions ./script-actions
+
+
+
