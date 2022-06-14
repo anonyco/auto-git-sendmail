@@ -7,7 +7,7 @@ FROM alpine:3.15
 RUN set -e \
  && apk add --no-cache ca-certificates git git-email bash \
 # For python 3 and the needed jinja2 library:
-      py3-jinja2 py3-markupsafe \
+      py3-jinja2 py3-markupsafe gpg curl \
 #      perl perl-mime-base64 perl-digest-md5 perl-digest-sha1 perl-ntlm \
 #      perl-authen-sasl perl-net-dns perl-time-hires \
 #      perl-socket perl-io-socket-inet6 \

@@ -5,6 +5,8 @@
 #  exit 1
 #fi
 
+set -x
+
 if ! test -d ./email-test-drive/ ; then
   git clone https://git.sr.ht/~sircmpwn/email-test-drive
 fi
@@ -15,8 +17,8 @@ cd email-test-drive
 
 #git pull -f
 
-ln -sfT ../../auto-git-sendmail ./auto-git-sendemail
-ln -sfT ../email-test-drive-script-actions ./script-actions
-
+ln -vsfT ../../auto-git-sendmail ./auto-git-sendemail
+#ln -sfT ../email-test-drive-script-actions ./script-actions
+cp -vRfT ../email-test-drive-script-actions ./script-actions
 
 

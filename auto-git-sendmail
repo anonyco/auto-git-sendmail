@@ -90,9 +90,12 @@ fi
 userID="$( stat -c "%u" . )"
 groupID="$( stat -c "%g" . )"
 
+gitRepoPath="$(pwd -L)"
+colorize "$LGRAY" "Selected git repo: $gitRepoPath"
+
 # FIXME: trailing newlines are trimmed in subshell expansion, so this will break if running from a directory whose name ends in a new-line
 # According to https://github.com/docker/cli/issues/1480, docker accepts volume entries in CSV format
-mountArg='type=bind,"'"src=$(pwd -L | sed -e 's/"/""/g')"'",dst=/git-repo'
+mountArg='type=bind,"'"src=$(printf "%s" "$gitRepoPath" | sed -e 's/"/""/g')"'",dst=/git-repo'
 
 VIMCONFIGURATION=''
 if test -r ~/.vimrc ; then
@@ -154,5 +157,12 @@ fi
 ln -sfT "$EDITOR" "$credStorePath/editor"
 export EDITOR
 
-docker run --net=host --read-only -itu "$userID:$groupID" -w /git-repo --mount type=tmpfs,destination=/tmp --mount "$mountArg" -e NOCOLOR -e VIMCONFIGURATION -e EDITOR -e TMPFS_CRED_STORE_ENABLED -v "$credStorePath:/credentials-store" "$dockerImageTag" "$@"
+set -- -itu "$userID:$groupID" -w /git-repo --mount "$mountArg" -e NOCOLOR -e VIMCONFIGURATION -e EDITOR -e TMPFS_CRED_STORE_ENABLED -v "$credStorePath:/credentials-store" "$dockerImageTag" "$@"
+docker run --init --rm --net=host --read-only --mount type=tmpfs,destination=/tmp "$@"
+
+if test $? -eq 125 ; then
+  # try again with optional arguments removed
+  docker run "$@"
+fi
+
 

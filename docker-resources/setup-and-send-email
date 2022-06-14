@@ -2,6 +2,8 @@
 
 set -e
 
+trap "echo ; trap '' EXIT INT TERM ; kill -9 $$" EXIT INT TERM QUIT
+
 AUTOFILLEMAILDIR="${AUTOFILLEMAILDIR:-}"
 
 if test -z "$AUTOFILLEMAILDIR"; then
@@ -145,22 +147,24 @@ promptForPassword() (
 )
 
 if test "$doConfigure" = "y" ; then
-  colorize "$LGRAY" 'Need to remove any existing email configuration in this repo to continue. This will not effect your global git configuration; it will on effect just this --local repo.'
-  colorize "$DGRAY" "(NOTICE: If this is your first time setting this up, then just tick y and continue. We just didn't want to change your repo without your consent.)"
-  
-  if test "$1" = "-y" || test "$1" = "--yes" ; then
-    : # assume yes to queries
-  elif ! yes_or_no 'Proceed with removal of this info?' ; then
-    colorize "$RED" 'Aborting...'
-    exit 1
+  if test -f .git/config ; then
+    colorize "$LGRAY" 'Need to remove any existing email configuration in this repo to continue. This will not effect your global git configuration; it will on effect just this --local repo.'
+    colorize "$DGRAY" "(NOTICE: If this is your first time setting this up, then just tick y and continue. We just didn't want to change your repo without your consent.)"
+    
+    if test "$1" = "-y" || test "$1" = "--yes" ; then
+      : # assume yes to queries
+    elif ! yes_or_no 'Proceed with removal of this info?' ; then
+      colorize "$RED" 'Aborting...'
+      exit 1
+    fi
   fi
 
-  rm -f /credentials-store/* 2>/dev/null || true
   git config --local --remove-section sendemail 2>/dev/null || :
   git config --local --remove-section credential 2>/dev/null || :
 
   if test "$doForgetOnly" = "y" ; then
     # we are only clearing information, not updating with new email login information
+    rm -f /credentials-store/* 2>/dev/null || true
     exit 0
   fi
   
@@ -212,8 +216,8 @@ if test "$doConfigure" = "y" ; then
   echo
 
   colorize "$LGRAY" "Login to your email's SMTP outgoing server:"
-  AUTOFILL_OUT_SERVER="$(    promptForInput "Server (e.x. smtp.example.com):          ")"
   AUTOFILL_OUT_USERNAME="$(  promptForInput "Username (e.x. admin@example.com):       ")"
+  AUTOFILL_OUT_SERVER="$(    promptForInput "Server (e.x. smtp.example.com):          ")"
   #AUTOFILL_OUT_PASSWORD="$(promptForPassword "Password (e.x. aLongMnemonic123):        ")"
   AUTOFILL_OUT_SECURITY=""
   while test "$AUTOFILL_OUT_SECURITY" = "" ; do
@@ -237,8 +241,8 @@ if test "$doConfigure" = "y" ; then
   echo
 
   colorize "$LGRAY" "Login to your email's IMAP incoming server:"
-  AUTOFILL_IN_SERVER="$(     promptForInput "Server (e.x. imap.example.com):          ")"
   AUTOFILL_IN_USERNAME="$(   promptForInput "Username (e.x. admin@example.com):       ")"
+  AUTOFILL_IN_SERVER="$(     promptForInput "Server (e.x. imap.example.com):          ")"
   #AUTOFILL_IN_PASSWORD="$(   promptForPassword "Password (e.x. aLongMnemonic123):     ")"
   AUTOFILL_IN_SECURITY=""
   while test "$AUTOFILL_IN_SECURITY" = "" ; do
@@ -317,7 +321,9 @@ if test "$doConfigure" = "y" ; then
   done
 fi
 
-possibleActions=( ./script-actions/* )
+cd script-actions
+possibleActions=( ?* )
+cd ..
 
 echo
 colorize "$LGRAY" "Choose which automation action you would like to perform:"
@@ -340,7 +346,7 @@ PS3="$oldPS3"
 
 ls -la
 
-for script in "$chosenAction"/*
+for script in "$chosenAction"/[0-9]*
 do
   echo
   colorize "$LGRAY" "Executing $script..."
