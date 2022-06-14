@@ -1,6 +1,6 @@
 
 <p align="center">
-	<img src="artwork/project-icon-183x128.png" alt="Sealed envelope stamped with GIT" width="183" style="max-width:100%"/>
+	<img src="DOCUMENTATION/artwork/project-icon-183x128.png" alt="Sealed envelope stamped with GIT" width="183" style="max-width:100%"/>
 </a>
 
 # Auto Git Sendemail: The Bloatiest Way To Send Email
